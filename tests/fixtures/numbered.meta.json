@@ -1,0 +1,61 @@
+{
+  "spec": {
+    "file": "numbered-640x360-30fps.mp4",
+    "width": 640,
+    "height": 360,
+    "fps": 30,
+    "duration": 4,
+    "toneHz": 440
+  },
+  "sampleRate": 48000,
+  "bursts": [
+    {
+      "start": 0,
+      "end": 0.12,
+      "freq": 1500,
+      "amp": 0.55
+    },
+    {
+      "start": 0.5,
+      "end": 0.56,
+      "freq": 1000,
+      "amp": 0.55
+    },
+    {
+      "start": 1,
+      "end": 1.12,
+      "freq": 1500,
+      "amp": 0.55
+    },
+    {
+      "start": 1.5,
+      "end": 1.56,
+      "freq": 1000,
+      "amp": 0.55
+    },
+    {
+      "start": 2,
+      "end": 2.12,
+      "freq": 1500,
+      "amp": 0.55
+    },
+    {
+      "start": 2.5,
+      "end": 2.56,
+      "freq": 1000,
+      "amp": 0.55
+    },
+    {
+      "start": 3,
+      "end": 3.12,
+      "freq": 1500,
+      "amp": 0.55
+    },
+    {
+      "start": 3.5,
+      "end": 3.56,
+      "freq": 1000,
+      "amp": 0.55
+    }
+  ]
+}

@@ -1,0 +1,148 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>kernel test bench</title>
+<script type="importmap">
+  { "imports": { "mp4box": "/node_modules/mp4box/dist/mp4box.all.mjs" } }
+</script>
+<body>
+<script type="module">
+import { SlowmoEngine } from '/src/kernel/engine.js';
+import { Wsola } from '/src/kernel/wsola.js';
+
+const SR = 48000;
+
+async function fetchBuffer(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`fetch ${url}: ${res.status}`);
+  return res.arrayBuffer();
+}
+
+// Audio tap: a parallel worklet recorder fed from the engine destination is not
+// possible (AudioContext.destination has no output), so the engine is given a
+// tap worklet that forwards its renderer output to both the destination and
+// the recorder. We patch connect() to insert the tap on the renderer node.
+class Tap {
+  constructor(ctx, channels) {
+    this.ctx = ctx;
+    this.chunks = [];
+    this.frames = 0;
+  }
+  async attach(engineNode) {
+    const code = `
+      class TapProc extends AudioWorkletProcessor {
+        constructor() { super(); this.port.onmessage = (e) => { if (e.data === 'dump') { this.port.postMessage({ chunks: this.buf }); this.buf = []; } }; this.buf = []; }
+        process(inputs) {
+          const ch = inputs[0] && inputs[0][0];
+          const ch2 = inputs[0] && inputs[0][1];
+          if (ch) {
+            // copy both channels
+            const l = new Float32Array(ch);
+            const r = ch2 ? new Float32Array(ch2) : new Float32Array(ch);
+            this.buf.push({ l, r });
+            if (this.buf.length > 4000) this.buf.shift();
+          }
+          return true;
+        }
+      }
+      registerProcessor('tap-proc', TapProc);
+    `;
+    const url = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
+    await this.ctx.audioWorklet.addModule(url);
+    this.node = new AudioWorkletNode(this.ctx, 'tap-proc', { numberOfInputs: 1, numberOfOutputs: 1, channelCount: 2, channelCountMode: 'explicit' });
+    this.node.connect(this.ctx.destination);
+    engineNode.connect(this.node);
+    this.attachedTo = engineNode;
+    return this;
+  }
+  async dump() {
+    this.node.port.postMessage('dump');
+    const msg = await new Promise((res) => {
+      const t = setTimeout(() => res(null), 2000);
+      this.node.port.onmessage = (e) => { clearTimeout(t); res(e.data); };
+    });
+    if (!msg) return null;
+    let total = 0;
+    for (const c of msg.chunks) total += c.l.length;
+    const L = new Float32Array(total);
+    const R = new Float32Array(total);
+    let o = 0;
+    for (const c of msg.chunks) { L.set(c.l, o); R.set(c.r, o); o += c.l.length; }
+    return { left: L, right: R, sampleRate: this.ctx.sampleRate };
+  }
+}
+
+window.bench = {
+  SlowmoEngine,
+  Wsola,
+  SR,
+
+  async makeEngine(url, { rate = 1, loop = true } = {}) {
+    const ctx = new AudioContext({ sampleRate: SR, latencyHint: 'interactive' });
+    const engine = new SlowmoEngine({ audioContext: ctx });
+    const buf = await fetchBuffer(url);
+    await engine.load(buf, { loop });
+    await engine.setRate(rate);
+    return { engine, ctx };
+  },
+
+  async withTap(ctx, engine) {
+    const tap = new Tap(ctx, 2);
+    await tap.attach(engine.node);
+    return tap;
+  },
+
+  // Measure the frequency of a region using autocorrelation (robust for tone).
+  freqOf(x, sr = SR) {
+    const n = Math.min(x.length, sr * 2);
+    // Hann window not needed for autocorrelation over long spans.
+    let bestLag = 0, best = -Infinity;
+    const minLag = Math.floor(sr / 2000), maxLag = Math.ceil(sr / 50);
+    // normalize by mean
+    let mean = 0; for (let i = 0; i < n; i++) mean += x[i];
+    mean /= n;
+    const y = new Float32Array(n); for (let i = 0; i < n; i++) y[i] = x[i] - mean;
+    for (let lag = minLag; lag < maxLag && lag < n - 10; lag++) {
+      let acc = 0;
+      for (let i = 0; i < n - lag; i++) acc += y[i] * y[i + lag];
+      acc /= (n - lag);
+      if (acc > best) { best = acc; bestLag = lag; }
+    }
+    return sr / bestLag;
+  },
+
+  zeroCrossFreq(x, sr = SR) {
+    let zc = 0;
+    for (let i = 1; i < x.length; i++) if (x[i - 1] <= 0 && x[i] > 0) zc++;
+    return (zc * sr) / x.length;
+  },
+
+  rms(x, from = 0, to = x.length) {
+    let s = 0; for (let i = from; i < to; i++) s += x[i] * x[i];
+    return Math.sqrt(s / Math.max(1, to - from));
+  },
+
+  // Find burst onsets: regions where high-frequency energy jumps.
+  // Returns onset times (s) detected by short-window RMS threshold crossing.
+  onsetTimes(x, sr = SR, { windowMs = 4, threshold = 0.09 } = {}) {
+    const w = Math.max(8, Math.round((windowMs / 1000) * sr));
+    const out = [];
+    let armed = true;
+    let armedAt = -1;
+    // high-pass by first difference to emphasize 1k/1.5k bursts over 440 tone
+    const hp = new Float32Array(x.length);
+    for (let i = 1; i < x.length; i++) hp[i] = x[i] - x[i - 1];
+    for (let i = 0; i + w < hp.length; i += 1) {
+      let s = 0; for (let j = 0; j < w; j++) s += hp[i + j] * hp[i + j];
+      const r = Math.sqrt(s / w);
+      if (armed && r > threshold) { out.push(i / sr); armed = false; armedAt = i; }
+      if (!armed && r < threshold * 0.4) { if (i - armedAt > sr * 0.04) armed = true; }
+    }
+    return out;
+  },
+
+  sleep(ms) { return new Promise((r) => setTimeout(r, ms)); },
+};
+
+window.__benchReady = true;
+</script>
+</body>

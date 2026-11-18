@@ -1,35 +1,36 @@
 {
-  "name": "slowmo-studio",
+  "name": "slowmo-kernel",
   "version": "1.0.0",
-  "description": "技术动作慢放：自研 WSOLA 音频时间伸缩 + 共同媒体时钟取帧的变速播放内核，含图形播放器与辅助 CLI",
-  "type": "module",
-  "main": "core/engine.js",
+  "description": "Pitch-preserving slow-motion playback kernel and graphical player for technical sports videos",
+  "main": "src/kernel/engine.js",
   "scripts": {
-    "start": "node server/index.js",
-    "cli": "node cli/slowmo.js",
-    "test": "node test/run-tests.js"
+    "dev": "node scripts/serve.mjs",
+    "fixtures": "node scripts/make-fixtures.mjs",
+    "fixtures:force": "node scripts/make-fixtures.mjs --force",
+    "test:unit": "node --test tests/wsola.test.js tests/rates.test.js tests/clock.test.js",
+    "test:browser": "node --test tests/browser.test.mjs tests/player.test.mjs",
+    "test": "npm run test:unit && npm run test:browser",
+    "probe": "node probe/ui-play.mjs"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/cinderrapid8/cc-5039-10.git"
+    "url": "git+https://github.com/delta5803/cc-5039-10.git"
   },
-  "keywords": [
-    "slow-motion",
-    "wsola",
-    "time-stretch",
-    "media-clock"
-  ],
+  "keywords": [],
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/cinderrapid8/cc-5039-10/issues"
+    "url": "https://github.com/delta5803/cc-5039-10/issues"
   },
-  "homepage": "https://github.com/cinderrapid8/cc-5039-10#readme",
-  "dependencies": {
-    "ffmpeg-static": "^5.3.0",
-    "ffprobe-static": "^3.1.0"
-  },
+  "homepage": "https://github.com/delta5803/cc-5039-10#readme",
+  "type": "module",
+  "private": "true",
   "devDependencies": {
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "@ffprobe-installer/ffprobe": "^2.1.2",
     "playwright": "^1.65.1"
+  },
+  "dependencies": {
+    "mp4box": "^2.5.0"
   }
 }

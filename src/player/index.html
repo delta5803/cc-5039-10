@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>动作慢放 · 图形播放器</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <script type="importmap">
+    { "imports": { "mp4box": "/node_modules/mp4box/dist/mp4box.all.mjs" } }
+  </script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <div>
+        <h1>动作慢放</h1>
+        <p>共享媒体时钟 · 保持音高的时间伸缩 · 按帧取帧</p>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <span id="status" class="status-pill">初始化…</span>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="stage-panel">
+      <div id="stage" class="stage">
+        <canvas id="frame-canvas" width="640" height="360"></canvas>
+        <div id="frame-badge" class="frame-badge">等待载入</div>
+      </div>
+
+      <div class="transport">
+        <button id="play-btn" class="primary" disabled>播放</button>
+        <button id="step-back" class="ghost" title="上一帧 (←)">◀ 帧</button>
+        <button id="step-fwd" class="ghost" title="下一帧 (→)">帧 ▶</button>
+        <div class="timecode">
+          <span id="out-position" class="timecode-value">0:00.000</span>
+          <span class="timecode-label">播放位置</span>
+        </div>
+        <label class="loop-switch">
+          <input id="loop-toggle" type="checkbox" checked />
+          <span>循环区间</span>
+        </label>
+      </div>
+
+      <div class="timeline">
+        <div id="timeline" class="timeline-track" aria-label="时间轴与区间选择">
+          <div class="timeline-ticks" id="timeline-ticks"></div>
+          <div id="timeline-region" class="timeline-region"></div>
+          <div id="handle-in" class="handle handle-in" data-handle="in" title="拖拽设定区间起点"></div>
+          <div id="handle-out" class="handle handle-out" data-handle="out" title="拖拽设定区间终点"></div>
+          <div id="playhead" class="playhead"></div>
+        </div>
+        <div class="timeline-meta">
+          <span>在时间轴上拖拽即可圈定区间；拖动两端手柄微调</span>
+          <span class="region-inputs">
+            <label>入 <input id="in-point" type="number" step="0.001" min="0" value="0" /> s</label>
+            <label>出 <input id="out-point" type="number" step="0.001" min="0" value="0" /> s</label>
+          </span>
+          <span id="media-info" class="media-info"></span>
+        </div>
+      </div>
+
+      <div class="rate-panel">
+        <div class="rate-head">
+          <label for="rate-slider">播放速度</label>
+          <span id="rate-value" class="rate-value" title="双击可输入范围外速率以验证拒绝">1.00×</span>
+        </div>
+        <input id="rate-slider" type="range" min="0.1" max="1.5" step="0.05" value="1" />
+        <div id="rate-range" class="rate-range"></div>
+        <div id="rate-presets" class="rate-presets">
+          <button data-rate="0.25">0.25×</button>
+          <button data-rate="0.5">0.5×</button>
+          <button data-rate="0.75">0.75×</button>
+          <button data-rate="1">1.00×</button>
+          <button data-rate="1.25">1.25×</button>
+        </div>
+        <div id="rate-notice" class="rate-notice" hidden></div>
+      </div>
+    </section>
+
+    <aside class="side">
+      <section class="card">
+        <h2>结果区 · 动作慢放</h2>
+        <p class="card-sub">数值均取自实际处理链的运行状态，非固定占位。</p>
+        <dl class="readout">
+          <dt>实际采用速率</dt><dd id="out-adopted" class="strong">–</dd>
+          <dt>请求速率</dt><dd id="out-requested">–</dd>
+          <dt>速率档位</dt><dd id="out-tier">–</dd>
+          <dt>循环动作</dt><dd id="out-loop">–</dd>
+          <dt>循环区间</dt><dd id="out-region">–</dd>
+          <dt>播放位置</dt><dd id="out-position-2">–</dd>
+          <dt>当前帧 / 总帧</dt><dd id="out-frame">–</dd>
+          <dt>位置来源</dt><dd id="out-source">–</dd>
+        </dl>
+      </section>
+
+      <section class="card">
+        <h2>时钟偏差</h2>
+        <dl class="readout">
+          <dt>偏差（固定偏移）</dt><dd id="out-deviation">–</dd>
+          <dt>漂移速率</dt><dd id="out-drift">–</dd>
+          <dt>记录延迟</dt><dd id="out-latency">–</dd>
+          <dt>音频缓冲</dt><dd id="out-ring">–</dd>
+          <dt>音频欠载</dt><dd id="out-underruns">–</dd>
+          <dt>视频已解码</dt><dd id="out-video-buf">–</dd>
+        </dl>
+        <p class="hint">偏差是音频渲染器实际输出位置与速率斜率的固定偏移；漂移速率是偏差随时间的变化，固定延迟不计为失步。</p>
+      </section>
+
+      <section class="card">
+        <h2>音频输出</h2>
+        <canvas id="audio-meter" width="320" height="56"></canvas>
+        <p class="hint">示波器取自 AudioContext 输出的实时波形：变速时音频仍在播放且保持音高，不以静音规避同步验证。</p>
+      </section>
+
+      <section class="card">
+        <h2>载入</h2>
+        <div id="demo-row" class="demo-row"></div>
+        <label class="file-drop">
+          <input id="file-input" type="file" accept="video/mp4,video/quicktime,.mp4,.mov" />
+          <span>选择本地 MP4 自制运动视频</span>
+        </label>
+        <div id="error-box" class="error-box" hidden></div>
+      </section>
+    </aside>
+  </main>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

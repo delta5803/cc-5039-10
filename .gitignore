@@ -24,5 +24,6 @@ __pycache__/
 .env
 .env.*
 
-# 运行时数据（上传/渲染结果/测试产物）
-data/
+# Fixture generator scratch WAV files
+/tests/fixtures/numbered.wav
+/tests/fixtures/pulses.wav
